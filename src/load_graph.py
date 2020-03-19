@@ -7,14 +7,14 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import dgl
 
-def read_ddi(path, etypes=['']):
+def ddi_graph(data, etypes=['']):
     """TODO: Docstring for red_csv.
 
-    :path: TODO
+    :data: pd csv
     :returns: TODO
 
     """
-    data = pd.read_csv(path)
+    # data = pd.read_csv(path)
     nodeids = list(set(list(data['STITCH 1']) + list(data['STITCH 2'])))
     nodeids = sorted(nodeids)
     nodemap = {node:id for id, node in enumerate(nodeids)}
@@ -31,14 +31,14 @@ def read_ddi(path, etypes=['']):
     return nodeids, nodemap, reltypes, relmap, edges
     
 
-def read_ppi(path):
+def ppi_graph(data):
     """TODO: Docstring for read_ppi.
 
-    :path: TODO
+    :data: TODO
     :returns: TODO
 
     """
-    data = pd.read_csv(path)
+    # data = pd.read_csv(path)
     p_ids = list(set(list(data['Gene 1']) + list(data['Gene 2'])))
     p_ids = sorted(p_ids)
     p_map = {p:i for i, p in enumerate(p_ids)}
@@ -50,16 +50,17 @@ def read_ppi(path):
     return p_ids, p_map, edges
 
 
-def read_pdi(path, n_map, p_map):
-    """TODO: Docstring for read_ppi.
+def dpi_graph(data, n_map, p_map):
+    """Create drug protien edges with only the nodes and protiens in the
+    arguments
 
-    :path: TODO
+    :data: TODO
     :n_map: TODO
     :p_map: TODO
     :returns: TODO
 
     """
-    data = pd.read_csv(path)
+    # data = pd.read_csv(path)
     edge_list_fwd = []
     edge_list_bwd = []
     for i, row in data.iterrows():
@@ -73,23 +74,26 @@ def read_pdi(path, n_map, p_map):
              ('drug', 'dpi', 'protien'): edge_list_fwd}
     return edges
 
-def build_multigraph():
+def build_multigraph(ddi_df, ppi_df, dpi_df):
     """TODO: Docstring for build_multigraph.
     :returns: TODO
 
     """
-    n, nmap, r, rmap, ddi_edges = read_ddi('../data/bio-decagon-combo.csv')
-    p, pmap, ppi_edges = read_ppi('../data/bio-decagon-ppi.csv')
-    pdi_edges = read_pdi('../data/bio-decagon-targets-all.csv', nmap, pmap)
+    n, nmap, r, rmap, ddi_edges = ddi_graph(ddi_df)
+    p, pmap, ppi_edges = ppi_graph(ppi_df)
+    pdi_edges = dpi_graph(dpi_df, nmap, pmap)
     all_edges = ppi_edges
     all_edges.update(ddi_edges)
     all_edges.update(pdi_edges)
     g = dgl.heterograph(all_edges)
-    print(g)
-    return g
+    return g, nmap, pmap, rmap
     
 
 
 if __name__ == "__main__":
-    build_multigraph()
+    ddi = pd.read_csv('../data/bio-decagon-combo.csv', nrows=100)
+    ppi = pd.read_csv('../data/bio-decagon-ppi.csv')
+    dpi = pd.read_csv('../data/bio-decagon-targets-all.csv')
+    g,_,_,_ = build_multigraph(ddi, ppi, dpi)
+    print(g)
     
