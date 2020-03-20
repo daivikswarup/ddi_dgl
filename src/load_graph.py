@@ -6,6 +6,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import networkx as nx
 import dgl
+from tqdm import tqdm
 
 def ddi_graph(data, etypes=['']):
     """TODO: Docstring for red_csv.
@@ -23,7 +24,8 @@ def ddi_graph(data, etypes=['']):
     relmap = {rel:id for id, rel in enumerate(reltypes)}
 
     edges = defaultdict(list)
-    for i, row in data.iterrows():
+    print(len(data))
+    for i, row in tqdm(data.iterrows(), desc='loading ddi'):
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
                     .append([nodemap[row['STITCH 1']], nodemap[row['STITCH 2']]])
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
@@ -80,6 +82,7 @@ def build_multigraph(ddi_df, ppi_df, dpi_df):
 
     """
     n, nmap, r, rmap, ddi_edges = ddi_graph(ddi_df)
+    print('here again')
     p, pmap, ppi_edges = ppi_graph(ppi_df)
     pdi_edges = dpi_graph(dpi_df, nmap, pmap)
     all_edges = ppi_edges
