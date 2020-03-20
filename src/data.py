@@ -8,22 +8,16 @@ class GraphDataset:
 
     """Docstring for GraphDataset. """
 
-    def __init__(self, ddi_path, ppi_path, dpi_path, mincount=20000):
+    def __init__(self, drugs, protiens, relations, ddi, ppi, dpi):
         """TODO: to be defined. """
-        # use only 1000 rows for debug
-        self.ddi = pd.read_csv(ddi_path)
 
-        # remove infrequent edges
-        counts = self.ddi['Polypharmacy Side Effect'].value_counts()
-        counts = counts[counts >= mincount]
-        df_edge_types = counts.index.values.tolist()
-        df_index = self.ddi[self.ddi['Polypharmacy Side Effect'].isin(df_edge_types)].index.values.tolist()  #[:50]  # for testing locally
-        self.ddi = self.ddi.iloc[df_index]
-
-        self.ppi = pd.read_csv(ppi_path)
-        self.dpi = pd.read_csv(dpi_path)
-        print('here')
-        self.g, self.nmap, self.pmap, self.rmap = build_multigraph(self.ddi, self.ppi, self.dpi)
+        self.ddi = ddi
+        self.ppi = ppi
+        self.dpi = dpi
+        self.nmap = {drug:i for i, drug in enumerate(drugs)}
+        self.pmap = {prot:i for i, prot in enumerate(protiens)}
+        self.rmap = {rel:i for i, rel in enumerate(relations)}
+        self.g = build_multigraph(self.nmap, self.pmap,self.rmap, self.ddi, self.ppi, self.dpi)
 
     def __len__(self):
         """TODO: Docstring for __len__.

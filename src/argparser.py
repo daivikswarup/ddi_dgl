@@ -18,5 +18,11 @@ def parse_args():
     parser.add_argument('-n_folds', action='store', type=int,\
                 help = 'Number of folds in training',\
                 default = 10)
+    parser.add_argument('-batch_size', action='store', type=int,\
+                help = 'Batch_size',\
+                default = 256)
+    parser.add_argument('-num_epochs', action='store', type=int,\
+                help = 'num_epochs',\
+                default = 3)
     return parser.parse_args()
 

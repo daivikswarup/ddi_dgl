@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from dgl import DGLGraph
 import dgl.function as fn
 from functools import partial
+import numpy as np
 
 class RGCN_layer(nn.Module):
 
@@ -51,14 +52,24 @@ class RGCN(nn.Module):
 
         """
         nn.Module.__init__(self)
-
-        self.embeddings = nn.ParameterDict({ntype: \
-                    nn.Parameter(torch.Tensor(g.number_of_nodes(ntype),sizes[0]))\
-                                            for ntype in g.ntypes})
-        for _, param in self.embeddings.items():
-            nn.init.xavier_uniform_(param)
+        # self.embeddings = nn.ParameterDict({ntype: \
+        #             nn.Parameter(torch.Tensor(g.number_of_nodes(ntype),sizes[0]))\
+        #                                     for ntype in g.ntypes})
+        # for _, param in self.embeddings.items():
+        #     nn.init.xavier_uniform_(param)
+        self.num_nodes = {ntype: g.number_of_nodes(ntype) for ntype in g.ntypes}
+        self.total = np.sum(list(self.num_nodes.values()))
+        sizes = [self.total] + sizes 
         self.layers = nn.ModuleList([RGCN_layer(a, b, g.etypes) for a, b in \
                                      zip(sizes[:-1], sizes[1:])])
+        self.ip = {}
+        cum_sum = 0
+        eye = np.eye(self.total)
+        for ntype in sorted(g.ntypes):
+            self.ip[ntype] = torch.Tensor(eye[cum_sum+np.arange(g.number_of_nodes(ntype))]).long()
+            cum_sum += g.number_of_nodes(ntype)
+
+        # self.ip = {ntype: torch.eye(g.number_of_nodes(ntype)) for ntype in g.ntypes}
     def forward(self, g):
         """TODO: Docstring for forward.
 
@@ -66,7 +77,7 @@ class RGCN(nn.Module):
         :returns: TODO
 
         """
-        op = self.embeddings
+        op = self.ip
         for layer in self.layers:
             op = layer(g, op)
         return op
@@ -86,7 +97,7 @@ class LinkPrediction(nn.Module):
                                                             sizes[-1]]))
         nn.init.xavier_normal_(self.relation_matrices)
 
-    def forward(self, g, nodepairs, relations):
+    def forward(self, g, nodepairs, relations=None):
         """Pass graph through rgcn, predict edge labels for given edge pairs
 
         :g: TODO
@@ -100,9 +111,20 @@ class LinkPrediction(nn.Module):
                                             # batch x 1 x dim
         drug_end = node_embeddings['drug'][nodepairs[:,1]].unsqueeze(2)
                                             # batch x dim x 1
-        matrices = self.relation_matrices[relations] # batch x dim x dim
-        return torch.matmul(torch.matmul(drug_start, matrices), \
+        if relations is not None:
+            matrices = self.relation_matrices[relations] # batch x dim x dim
+            return torch.matmul(torch.matmul(drug_start, matrices), \
                             drug_end).squeeze(1).squeeze(1)
+        else:
+            matrices = self.relation_matrices.unsqueeze(0)
+            drug_start = drug_start.unsqueeze(1)
+            drug_end = drug_end.unsqueeze(1)
+            # 1 x classes x dim x dim
+            # drug_start = b x 1 x 1 x dim
+            # drug_end = b x 1 x dim x 1
+            # output = b x classes
+            logits = torch.matmul(torch.matmul(drug_start, matrices), \
+                            drug_end).squeeze(-1).squeeze(-1)
         
 
         
