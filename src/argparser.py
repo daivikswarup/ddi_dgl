@@ -15,14 +15,17 @@ def parse_args():
     parser.add_argument('-dpi', action='store', dest='dpi',\
                 help='Path to dpi csv',\
                 default='../data/bio-decagon-targets-all.csv')
+    parser.add_argument('-savepath', action='store', dest='savepath',\
+                help='Directory to save checkpoints',\
+                default='../models')
     parser.add_argument('-n_folds', action='store', type=int,\
                 help = 'Number of folds in training',\
                 default = 10)
     parser.add_argument('-batch_size', action='store', type=int,\
                 help = 'Batch_size',\
-                default = 256)
+                default = 128)
     parser.add_argument('-num_epochs', action='store', type=int,\
                 help = 'num_epochs',\
-                default = 3)
+                default = 10)
     return parser.parse_args()
 

@@ -9,6 +9,21 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 from sklearn.model_selection import KFold
+from sklearn.metrics import roc_auc_score, average_precision_score
+import numpy as np
+import os
+
+
+def metrics(predictions, targets):
+    # How to compute AP@50?
+    return {'AUROC': roc_auc_score(targets, predictions),\
+            'AUPRC': average_precision_score(targets, predictions)}
+
+def aggregate(metrics):
+    keys = metrics[0].keys()
+    agg = {key:np.mean([x[key] for x in metrics]) for key in keys}
+    return agg
+
 
 
 def filter_ddi(ddi, mincount=20000):
@@ -38,6 +53,7 @@ def read_data(args):
     return drugs, protiens,relations, ddi, ppi, dpi
 
 def train(model, dataset, args):
+    model.train()
     loss = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
     for epoch in range(args.num_epochs):
@@ -49,13 +65,25 @@ def train(model, dataset, args):
             l.backward()
             optimizer.step()
 
-def eval(model, dataset):
-    return 0
+def eval(model, dataset, args):
+    model.eval()
+    targets = []
+    predictions = []
+    for i, (g, e, l, y) in \
+            tqdm(enumerate(dataset.get_batches(args.batch_size)),
+                        desc='Evaluating ',total=len(dataset)/args.batch_size):
+        with torch.no_grad():
+            prediction = model(g, e.cuda(),l.cuda()).detach()
+            targets.append(y.detach())
+            predictions.append(prediction)
+    all_targets = torch.cat(targets).detach().cpu().numpy()
+    all_predictions = torch.cat(predictions).detach().cpu().numpy()
+    return metrics(all_predictions, all_targets)
 
 def eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args):
     kf = KFold(n_splits=args.n_folds, shuffle=True)
-    accuracy = []
-    for train_ids, test_ids in kf.split(ddi):
+    metrics = []
+    for fold, (train_ids, test_ids) in enumerate(kf.split(ddi)):
         train_ddi = ddi.iloc[train_ids]
         test_ddi = ddi.iloc[test_ids]
         train_dataset = GraphDataset(drugs, protiens, relations, train_ddi, \
@@ -64,9 +92,12 @@ def eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args):
                                      ppi, dpi)
         model = LinkPrediction(train_dataset.g).cuda()
         train(model, train_dataset, args)
-        acc = eval(model, test_dataset)
-        accuracy.append(acc)
-    return np.mean(accuracy)
+        acc = eval(model, test_dataset, args)
+        print(acc)
+        torch.save(model.state_dict(), os.path.join(args.savepath,
+                                                    'Fold_%d.pt'%fold))
+        metrics.append(acc)
+    return aggregate(metrics)
 
 
 
@@ -77,19 +108,20 @@ def main():
     """
     args = parse_args()
     drugs, protiens,relations, ddi, ppi, dpi = read_data(args)
-    dataset = GraphDataset(drugs, protiens,relations, ddi, ppi, dpi)
-    model = LinkPrediction(dataset.g).cuda()
-    loss = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
-    for epoch in range(100):
-        for i, (g, e, l, y) in tqdm(enumerate(dataset.get_batches(args.batch_size)),
-                        desc='Epoch %d'%epoch,total=len(ddi)/args.batch_size):
-            optimizer.zero_grad()
-            scores = model(g, e.cuda(), l.cuda())
-            l = loss(scores, y.float().cuda())
-            l.backward()
-            optimizer.step()
-            # print(l.cpu().detach())
+    print(eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args))
+    # dataset = GraphDataset(drugs, protiens,relations, ddi, ppi, dpi)
+    # model = LinkPrediction(dataset.g).cuda()
+    # loss = nn.BCEWithLogitsLoss()
+    # optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    # for epoch in range(100):
+    #     for i, (g, e, l, y) in tqdm(enumerate(dataset.get_batches(args.batch_size)),
+    #                     desc='Epoch %d'%epoch,total=len(ddi)/args.batch_size):
+    #         optimizer.zero_grad()
+    #         scores = model(g, e.cuda(), l.cuda())
+    #         l = loss(scores, y.float().cuda())
+    #         l.backward()
+    #         optimizer.step()
+    #         # print(l.cpu().detach())
 
 
 

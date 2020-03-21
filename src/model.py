@@ -8,6 +8,7 @@ from dgl import DGLGraph
 import dgl.function as fn
 from functools import partial
 import numpy as np
+from dgl.nn.pytorch.conv import RelGraphConv
 
 class RGCN_layer(nn.Module):
 
@@ -44,7 +45,7 @@ class RGCN(nn.Module):
 
     """2 RGCN layers"""
 
-    def __init__(self, g, sizes=[128,128,128]):
+    def __init__(self, g, sizes=[128,128]):
         """TODO: to be defined.
 
         :g: TODO
@@ -61,12 +62,16 @@ class RGCN(nn.Module):
         self.total = np.sum(list(self.num_nodes.values()))
         sizes = [self.total] + sizes 
         self.layers = nn.ModuleList([RGCN_layer(a, b, g.etypes) for a, b in \
-                                     zip(sizes[:-1], sizes[1:])])
+                                  zip(sizes[:-1], sizes[1:])])
+        # self.layers = nn.ModuleList([RelGraphConv(a, b, len(g.etypes),\
+        #                                           num_bases=30) for a, b in \
+        #                              zip(sizes[:-1], sizes[1:])])
         self.ip = {}
         cum_sum = 0
         eye = np.eye(self.total)
         for ntype in sorted(g.ntypes):
-            self.ip[ntype] = torch.Tensor(eye[cum_sum+np.arange(g.number_of_nodes(ntype))]).long()
+            self.ip[ntype] = \
+                   torch.Tensor(eye[cum_sum+np.arange(g.number_of_nodes(ntype))]).cuda()
             cum_sum += g.number_of_nodes(ntype)
 
         # self.ip = {ntype: torch.eye(g.number_of_nodes(ntype)) for ntype in g.ntypes}

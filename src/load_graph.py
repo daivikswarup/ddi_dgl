@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import dgl
 from tqdm import tqdm
+import os
 
 def ddi_graph(data, nodemap, etypes=['']):
     """TODO: Docstring for red_csv.
@@ -84,7 +85,8 @@ def build_multigraph(nmap, pmap, rmap, ddi_df, ppi_df, dpi_df):
     all_edges = ppi_edges
     all_edges.update(ddi_edges)
     all_edges.update(pdi_edges)
-    g = dgl.heterograph(all_edges)
+    g = dgl.heterograph(all_edges, num_nodes_dict={'drug':len(nmap), \
+                                                   'protien': len(pmap)})
     return g
     
 
