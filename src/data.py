@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import pandas as pd
 from load_graph import build_multigraph
+import networkx as nx
+from itertools import islice
 
 
 class GraphDataset:
@@ -17,7 +19,10 @@ class GraphDataset:
         self.nmap = {drug:i for i, drug in enumerate(drugs)}
         self.pmap = {prot:i for i, prot in enumerate(protiens)}
         self.rmap = {rel:i for i, rel in enumerate(relations)}
-        self.g = build_multigraph(self.nmap, self.pmap,self.rmap, self.ddi, self.ppi, self.dpi)
+        self.g, self.nx_g = build_multigraph(self.nmap, self.pmap,self.rmap, self.ddi, self.ppi, self.dpi)
+        # for path in nx.all_simple_paths(self.nx_g, (1, 'drug'),
+        #                                        (2,'drug'), cutoff=3):
+        #     print(path)
 
     def __len__(self):
         """TODO: Docstring for __len__.
@@ -26,7 +31,18 @@ class GraphDataset:
         """
         return len(self.ddi)
 
-    def get_batches(self, batch_size=16, corruption=1):
+    def get_paths(self, edges, npaths):
+        paths = []
+        for n1, n2 in edges:
+            try:
+                shortest_paths = list(islice(nx.all_simple_paths(self.nx_g, (int(n1), 'drug'),\
+                  (int(n2), 'drug'), cutoff=3),npaths))
+            except nx.exception.NetworkXNoPath: # no path between nodes
+                shortest_paths = []
+            paths.append(shortest_paths)
+        return paths
+
+    def get_batches(self, batch_size=16, corruption=1, npaths=5):
         """TODO: Docstring for __getitem__.
 
         :idx: TODO
@@ -63,7 +79,8 @@ class GraphDataset:
             all_edges = torch.Tensor(np.concatenate([edges, neg_edges],0)).long()
             all_rels = torch.Tensor(np.concatenate([labels, neg_labels],0)).long()
             y = torch.Tensor([1]*len(n1)+[0]*len(neg_n1)).long()
-            yield self.g, all_edges, all_rels, y
+            paths = self.get_paths(all_edges, npaths)
+            yield self.g, all_edges, all_rels, y, paths
                         
 
 if __name__ == "__main__":

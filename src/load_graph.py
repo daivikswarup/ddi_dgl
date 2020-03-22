@@ -6,6 +6,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import networkx as nx
 import dgl
+import networkx as nx
 from tqdm import tqdm
 import os
 
@@ -85,9 +86,21 @@ def build_multigraph(nmap, pmap, rmap, ddi_df, ppi_df, dpi_df):
     all_edges = ppi_edges
     all_edges.update(ddi_edges)
     all_edges.update(pdi_edges)
+
+    # Also create a networkx graph to find paths easily
+    nx_g = nx.MultiGraph()
+    for node in nmap:
+        nx_g.add_node((nmap[node], 'drug'))
+    for pr in pmap:
+        nx_g.add_node((pmap[pr], 'protien'))
+    for (src,etype,tgt),edges in all_edges.items():
+        for a,b in edges:
+            nx_g.add_edge((a,src), (b,tgt), type=etype)
+
+    # create DGL graph
     g = dgl.heterograph(all_edges, num_nodes_dict={'drug':len(nmap), \
                                                    'protien': len(pmap)})
-    return g
+    return g, nx_g
     
 
 

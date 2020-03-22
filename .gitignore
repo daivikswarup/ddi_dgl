@@ -1,5 +1,7 @@
 */**/*.pyc
 */**/*.csv
 */**/*.tar.gz
-*/**/__pycache__
+*/**/__pycache__/*
 */**/*.sw*
+*/**/logs
+models
