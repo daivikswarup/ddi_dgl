@@ -24,7 +24,7 @@ def ddi_graph(data, nodemap, etypes=['']):
 
     edges = defaultdict(list)
     print(len(data))
-    for i, row in tqdm(data.iterrows(), desc='loading ddi'):
+    for i, row in tqdm(data.iterrows(), desc='loading ddi', total=len(data)):
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
                     .append([nodemap[row['STITCH 1']], nodemap[row['STITCH 2']]])
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
@@ -44,7 +44,7 @@ def ppi_graph(data, p_map):
     # p_ids = sorted(p_ids)
     # p_map = {p:i for i, p in enumerate(p_ids)}
     edge_list = []
-    for i, row in data.iterrows():
+    for i, row in tqdm(data.iterrows(), total=len(data), desc='Loading protiens'):
         edge_list.append([p_map[row['Gene 1']], p_map[row['Gene 2']]])
         edge_list.append([p_map[row['Gene 2']], p_map[row['Gene 1']]])
     edges = {('protien', 'ppi', 'protien'): edge_list}
@@ -88,14 +88,14 @@ def build_multigraph(nmap, pmap, rmap, ddi_df, ppi_df, dpi_df):
     all_edges.update(pdi_edges)
 
     # Also create a networkx graph to find paths easily
-    nx_g = nx.MultiGraph()
+    nx_g = nx.Graph()
     for node in nmap:
         nx_g.add_node((nmap[node], 'drug'))
     for pr in pmap:
-        nx_g.add_node((pmap[pr], 'protien'))
+        nx_g.add_node((pmap[pr], 'protien')) 
     for (src,etype,tgt),edges in all_edges.items():
         for a,b in edges:
-            nx_g.add_edge((a,src), (b,tgt), type=etype)
+            nx_g.add_edge((a,src), (b,tgt))
 
     # create DGL graph
     g = dgl.heterograph(all_edges, num_nodes_dict={'drug':len(nmap), \

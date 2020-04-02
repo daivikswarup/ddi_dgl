@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from argparser import parse_args
-from model import LinkPrediction 
+from model import LinkPrediction, PathAttention 
 from tqdm import tqdm
 from data import GraphDataset
 import pandas as pd
@@ -43,8 +43,8 @@ def read_data(args):
 
     """
     ddi = filter_ddi(pd.read_csv(args.ddi), args.mincount)
-    ppi = pd.read_csv(args.ppi,nrows=50)
-    dpi = pd.read_csv(args.dpi,nrows=50)
+    ppi = pd.read_csv(args.ppi, nrows=2)
+    dpi = pd.read_csv(args.dpi, nrows=2)
     if not args.use_protien:
         # delete all rows. keep column structure
         ppi = ppi[0:0]
@@ -61,6 +61,7 @@ def train(model, dataset, val_dataset, args):
     loss = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
     for epoch in range(args.num_epochs):
+        model.train()
         for i, (g, e, l, y, paths) in tqdm(enumerate(dataset.get_batches(args.batch_size,npaths=args.npaths)),
                         desc='Epoch %d'%epoch,total=len(dataset)/args.batch_size):
             optimizer.zero_grad()
@@ -102,7 +103,10 @@ def eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args):
                                      ppi, dpi)
         test_dataset = GraphDataset(drugs, protiens, relations, test_ddi, \
                                      ppi, dpi)
-        model = LinkPrediction(train_dataset.g).cuda()
+        if args.model=='RGCN':
+            model = LinkPrediction(train_dataset.g).cuda()
+        else:
+            model = PathAttention(train_dataset.g).cuda()
         train(model, train_dataset, val_dataset, args)
         acc = eval(model,train_dataset.g, test_dataset, args)
         print(acc)

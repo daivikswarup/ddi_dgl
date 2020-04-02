@@ -29,6 +29,7 @@ class RGCN_layer(nn.Module):
     def __init__(self, input_size, output_size, etypes, basis=30):
         """TODO: to be defined. """
         nn.Module.__init__(self)
+        self.output_size = output_size
         self.layer_dict = nn.ModuleDict({etype: Basis_linear(input_size,\
                         output_size, basis) for etype in etypes})
         self.self_loop = nn.Linear(input_size, output_size, bias=False)
@@ -42,6 +43,9 @@ class RGCN_layer(nn.Module):
         :returns: TODO
 
         """
+        for ntype in g.ntypes:
+            g.nodes[ntype].data['h'] = torch.zeros((g.number_of_nodes(ntype),\
+                                                    self.output_size)).cuda()
         message_func_dict = {}
         for src, etype, dst in g.canonical_etypes:
             g.nodes[src].data['W_%s'%etype] = self.layer_dict[etype](data[src])
@@ -153,7 +157,7 @@ class PathAttention(nn.Module):
 
     def __init__(self, g, sizes=[128,128]):
         """TODO: to be defined. """
-        super(LinkPrediction, self).__init__()
+        super(PathAttention, self).__init__()
         self.sizes = sizes
         self.rgcn = RGCN(g, sizes)
         self.lstm = nn.LSTM(sizes[-1],sizes[-1],1)
@@ -163,22 +167,23 @@ class PathAttention(nn.Module):
     def get_path(self, path, embeddings):
         vecs = []
         for node, ntype in path:
-            vecs.append(embeddins[ntype].index_select(0, torch.tensor(node)))
+            vecs.append(embeddings[ntype].index_select(0,torch.tensor(node).cuda()))
         # returns pathlen x dim
         return torch.stack(vecs, 0)
 
     def path_embedding(self, path, embeddings):
         inp = self.get_path(path, embeddings)
-        inp = inp.unsqueeze(1)
+        # inp = inp.unsqueeze(1)
         op, (h, c) = self.lstm(inp)
-        return op.squeeze(1)
+        return h.view(-1)
 
     def get_attention_context(self, path_embeddings, start, end):
         if len(path_embeddings) == 0: #no paths
-            return torch.zeros(self.sizes[-1])
+            return torch.zeros(self.sizes[-1]).cuda()
         stacked = torch.stack(path_embeddings, 0).unsqueeze(1) # NPath x 1 x dim
         start = start.unsqueeze(0).unsqueeze(0) # 1 x 1 x dim
-        return self.attention(start, stacked, stacked).squeeze(0).squeeze(0)
+        attn, att_wts = self.attention(start, stacked, stacked)
+        return attn.squeeze(0).squeeze(0)
 
     def forward(self, g, nodepairs, relations=None, paths=None):
         """Pass graph through rgcn, predict edge labels for given edge pairs
@@ -189,7 +194,7 @@ class PathAttention(nn.Module):
 
         """
         node_embeddings = self.rgcn(g)
-        path_embeddings = [[self.path_embedding(path) for path in datum] for \
+        path_embeddings = [[self.path_embedding(path, node_embeddings) for path in datum] for \
                                    datum in paths]
 
 
@@ -203,7 +208,11 @@ class PathAttention(nn.Module):
                            torch.unbind(drug_end))]
         context = torch.stack(context) # Batch x dim
         all_features = torch.cat([drug_start, drug_end, context],-1)
-        return self.output_layer(all_features)
+        op = self.output_layer(all_features)
+        if relations is not None:
+            return torch.gather(op, 1, relations.unsqueeze(-1)).squeeze(-1)
+        else:
+            return op
         
 
 def main():
