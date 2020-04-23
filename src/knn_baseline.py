@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import pickle
 from annoy import AnnoyIndex
 from sklearn.metrics import roc_auc_score
-from sklearn.metrics import averrage_precision_score
+from sklearn.metrics import average_precision_score
 
 
 ddi = pd.read_csv('../data/bio-decagon-combo.csv')

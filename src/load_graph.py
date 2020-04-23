@@ -23,6 +23,7 @@ def ddi_graph(data, nodemap, etypes=['']):
     # nodemap = {node:id for id, node in enumerate(nodeids)}
 
     edges = defaultdict(list)
+    return edges
     print(len(data))
     for i, row in tqdm(data.iterrows(), desc='loading ddi', total=len(data)):
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
@@ -69,10 +70,9 @@ def dpi_graph(data, n_map, p_map):
             continue
         edge_list_fwd.append([n_map[row['STITCH']], p_map[row['Gene']]])
         edge_list_bwd.append([p_map[row['Gene']], n_map[row['STITCH']]])
-        if i > 100:
-            break
     edges = {('protien', 'pdi', 'drug'): edge_list_bwd, \
              ('drug', 'dpi', 'protien'): edge_list_fwd}
+    print(edges)
     return edges
 
 def build_multigraph(nmap, pmap, rmap, ddi_df, ppi_df, dpi_df):

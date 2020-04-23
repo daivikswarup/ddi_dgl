@@ -17,10 +17,12 @@ else:
         pickle.dump(dataset.nx_g, f)
         nx_g = dataset.nx_g
 print('loaded')
-paths = list(nx.all_simple_paths(nx_g, (2, 'drug'),(1,'drug'), cutoff=4))
+paths = list(nx.all_simple_paths(nx_g, (500, 'drug'),(1,'drug'), cutoff=3))
+print(list(nx_g.neighbors((500,'drug'))))
+print(list(nx_g.neighbors((1,'drug'))))
 print('here')
 print(len(paths))
 #for path in paths:
 #    print(path)
-with open('path.pkl', 'wb') as f:
+with open('path_pp.pkl', 'wb') as f:
     pickle.dump(paths, f)
