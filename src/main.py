@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from argparser import parse_args
-from model import LinkPrediction, PathAttention 
+from model import LinkPrediction,LinkPredictionDiffpool, PathAttention 
 from tqdm import tqdm
 from data import GraphDataset
 import pandas as pd
@@ -105,6 +105,8 @@ def eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args):
                                      ppi, dpi)
         if args.model=='RGCN':
             model = LinkPrediction(train_dataset.g).cuda()
+        elif args.model=='Diffpool':
+            model = LinkPredictionDiffpool(train_dataset.g).cuda()
         else:
             model = PathAttention(train_dataset.g).cuda()
         train(model, train_dataset, val_dataset, args)

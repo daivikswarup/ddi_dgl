@@ -32,7 +32,7 @@ def parse_args():
                 default = 128)
     parser.add_argument('-num_epochs', action='store', type=int,\
                 help = 'num_epochs',\
-                default = 10)
+                default = 20)
     parser.add_argument('-mincount', action='store', type=int,\
                 help = 'minimum number of occurences in the data',\
                 default = 20000)
