@@ -11,30 +11,42 @@ import numpy as np
 from dgl.nn.pytorch.conv import RelGraphConv
 
 class Basis_linear(nn.Module):
-    def __init__(self, input_size, output_size, bases):
+    def __init__(self, input_size, output_size, bases, rel_names):
         nn.Module.__init__(self)
-        self.w1 = nn.Parameter(torch.Tensor(input_size, bases))
-        self.w2 = nn.Parameter(torch.Tensor(bases, output_size))
-        nn.init.xavier_uniform_(self.w1)
-        nn.init.xavier_uniform_(self.w2)
+        num_relations = len(rel_names)
+        self.rel_names = rel_names
+        self.bases = bases
+        self.w = nn.Parameter(torch.zeros((bases,input_size,output_size)).cuda())
+        self.coeff_mat = nn.Parameter(torch.zeros((num_relations,bases)).cuda())
+        nn.init.xavier_uniform_(self.w)
+        nn.init.xavier_uniform_(self.coeff_mat)
+        self.coeff = {e:w for e, w in zip(rel_names,\
+                                          torch.unbind(self.coeff_mat,dim=0))}
 
-    def forward(self, inp):
-        return torch.matmul(torch.matmul(inp, self.w1), self.w2)
+    def forward(self, inp, rel_type):
+        weight = torch.sum(self.coeff[rel_type].view(self.bases,1,1)*self.w,dim=0)
+        return torch.matmul(inp,weight)
+        
 
 
 class RGCN_layer(nn.Module):
 
     """Docstring for RGCN_layer. """
 
-    def __init__(self, input_size, output_size, etypes, basis=30):
+    def __init__(self, input_size, output_size, etypes,\
+                 basis=30,nonlinearity='ReLU'):
         """TODO: to be defined. """
         nn.Module.__init__(self)
         self.output_size = output_size
-        self.layer_dict = nn.ModuleDict({etype: Basis_linear(input_size,\
-                        output_size, basis) for etype in etypes})
+        self.basis_layer = Basis_linear(input_size, output_size, basis, etypes)
         self.self_loop = nn.Linear(input_size, output_size, bias=False)
-        self.bias = nn.Parameter(torch.Tensor(output_size))
+        self.bias = nn.Parameter(torch.zeros(output_size))
         nn.init.zeros_(self.bias)
+        if nonlinearity == 'ReLU':
+            self.nonlinearity = nn.ReLU()
+        else:
+            # No non linearity
+            self.nonlinearity = nn.Sequential()
 
     def forward(self, g, data):
         """TODO: Docstring for function.
@@ -48,15 +60,15 @@ class RGCN_layer(nn.Module):
                                                     self.output_size)).cuda()
         message_func_dict = {}
         for src, etype, dst in g.canonical_etypes:
-            g.nodes[src].data['W_%s'%etype] = self.layer_dict[etype](data[src])
+            g.nodes[src].data['W_%s'%etype] = self.basis_layer(data[src],etype)
             message_func_dict[etype] = (fn.copy_u('W_%s'%etype, 'm'), \
                                         fn.mean('m', 'h'))
         g.multi_update_all(message_func_dict, 'sum')
         for ntype in g.ntypes:
             g.nodes[ntype].data['Self_message'] = self.self_loop(data[ntype])
         
-        return {ntype:g.nodes[ntype].data['Self_message'] + \
-                g.nodes[ntype].data['h'] +self.bias for\
+        return {ntype:self.nonlinearity(g.nodes[ntype].data['Self_message'] + \
+                g.nodes[ntype].data['h'] +self.bias) for\
                     ntype in g.ntypes}
 
 # Mostly based on https://docs.dgl.ai/en/0.4.x/tutorials/hetero/1_basics.html
@@ -65,7 +77,7 @@ class RGCN(nn.Module):
 
     """2 RGCN layers"""
 
-    def __init__(self, g, sizes=[128,128]):
+    def __init__(self, g, sizes=[128,128,128]):
         """TODO: to be defined.
 
         :g: TODO
@@ -79,20 +91,29 @@ class RGCN(nn.Module):
         # for _, param in self.embeddings.items():
         #     nn.init.xavier_uniform_(param)
         self.num_nodes = {ntype: g.number_of_nodes(ntype) for ntype in g.ntypes}
-        self.total = np.sum(list(self.num_nodes.values()))
-        sizes = [self.total] + sizes 
+        # self.total = np.sum(list(self.num_nodes.values()))
+        # sizes = [self.total] + sizes 
         self.layers = nn.ModuleList([RGCN_layer(a, b, g.etypes) for a, b in \
                                   zip(sizes[:-1], sizes[1:])])
+
+        self.ip = \
+        nn.ParameterDict({ntype:nn.Parameter(torch.zeros((g.number_of_nodes(ntype),sizes[0])).cuda())\
+                          for ntype in g.ntypes})
+        for ntype in g.ntypes:
+            nn.init.xavier_uniform_(self.ip[ntype])
+            
+
+
         # self.layers = nn.ModuleList([RelGraphConv(a, b, len(g.etypes),\
         #                                           num_bases=30) for a, b in \
         #                              zip(sizes[:-1], sizes[1:])])
-        self.ip = {}
-        cum_sum = 0
-        eye = np.eye(self.total)
-        for ntype in sorted(g.ntypes):
-            self.ip[ntype] = \
-                   torch.Tensor(eye[cum_sum+np.arange(g.number_of_nodes(ntype))]).cuda()
-            cum_sum += g.number_of_nodes(ntype)
+        # self.ip = {}
+        # cum_sum = 0
+        # eye = np.eye(self.total)
+        # for ntype in sorted(g.ntypes):
+        #     self.ip[ntype] = \
+        #            torch.Tensor(eye[cum_sum+np.arange(g.number_of_nodes(ntype))]).cuda()
+        #     cum_sum += g.number_of_nodes(ntype)
 
         # self.ip = {ntype: torch.eye(g.number_of_nodes(ntype)) for ntype in g.ntypes}
     def forward(self, g):
@@ -112,7 +133,7 @@ class LinkPrediction(nn.Module):
 
     """Docstring for LinkPrediction. """
 
-    def __init__(self, g, sizes=[128,128]):
+    def __init__(self, g, sizes=[128, 128,128]):
         """TODO: to be defined. """
         super(LinkPrediction, self).__init__()
         self.rgcn = RGCN(g, sizes)
@@ -155,7 +176,7 @@ class PathAttention(nn.Module):
 
     """Docstring for LinkPrediction. """
 
-    def __init__(self, g, sizes=[128,128]):
+    def __init__(self, g, sizes=[128, 128,128]):
         """TODO: to be defined. """
         super(PathAttention, self).__init__()
         self.sizes = sizes

@@ -69,8 +69,6 @@ def dpi_graph(data, n_map, p_map):
             continue
         edge_list_fwd.append([n_map[row['STITCH']], p_map[row['Gene']]])
         edge_list_bwd.append([p_map[row['Gene']], n_map[row['STITCH']]])
-        if i > 100:
-            break
     edges = {('protien', 'pdi', 'drug'): edge_list_bwd, \
              ('drug', 'dpi', 'protien'): edge_list_fwd}
     return edges
