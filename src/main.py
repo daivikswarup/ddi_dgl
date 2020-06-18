@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from argparser import parse_args
-from model import LinkPrediction,LinkPredictionDiffpool, PathAttention 
+from model import * 
 from tqdm import tqdm
 from data import GraphDataset
 import pandas as pd
@@ -59,7 +59,7 @@ def read_data(args):
 def train(model, dataset, val_dataset, args):
     model.train()
     loss = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.00001)
     for epoch in range(args.num_epochs):
         model.train()
         for i, (g, e, l, y, paths) in tqdm(enumerate(dataset.get_batches(args.batch_size,npaths=args.npaths)),
@@ -119,6 +119,40 @@ def eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args):
 
 
 
+def eval_1fold(drugs, protiens, relations, ddi, ppi, dpi, args):
+    # kf = KFold(n_splits=args.n_folds, shuffle=True)
+    np.random.seed(0)
+    train_val_ids, test_ids =train_test_split(np.arange(len(ddi)), train_size=0.8)
+    train_ids, val_ids =train_test_split(train_val_ids, train_size=0.75)
+
+    train_ddi = ddi.iloc[train_ids]
+    val_ddi = ddi.iloc[val_ids]
+    test_ddi = ddi.iloc[test_ids]
+    train_dataset = GraphDataset(drugs, protiens, relations, train_ddi, \
+                                 ppi, dpi)
+    val_dataset = GraphDataset(drugs, protiens, relations, val_ddi, \
+                                 ppi, dpi)
+    test_dataset = GraphDataset(drugs, protiens, relations, test_ddi, \
+                                 ppi, dpi)
+    if args.model=='RGCN':
+        model = LinkPrediction(train_dataset.g).cuda()
+    elif args.model=='Diffpool':
+        model = LinkPredictionDiffpool(train_dataset.g).cuda()
+    elif args.model == 'DiffpoolPA':
+        model = LinkPredictionDiffpoolPA(train_dataset.g).cuda()
+    else:
+        model = PathAttention(train_dataset.g).cuda()
+    train(model, train_dataset, val_dataset, args)
+    acc = eval(model,train_dataset.g, test_dataset, args)
+    print(acc)
+    torch.save(model.state_dict(), os.path.join(args.savepath,
+                                                args.savefile))
+    return aggregate(metrics)
+
+
+
+
+
 def main():
     """TODO: Docstring for main.
     :returns: TODO
@@ -126,7 +160,8 @@ def main():
     """
     args = parse_args()
     drugs, protiens,relations, ddi, ppi, dpi = read_data(args)
-    print(eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args))
+    # print(eval_kfold(drugs, protiens, relations, ddi, ppi, dpi, args))
+    print(eval_1fold(drugs, protiens, relations, ddi, ppi, dpi, args))
     # dataset = GraphDataset(drugs, protiens,relations, ddi, ppi, dpi)
     # model = LinkPrediction(dataset.g).cuda()
     # loss = nn.BCEWithLogitsLoss()

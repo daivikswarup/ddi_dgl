@@ -9,6 +9,6 @@
 #
 #SBATCH --ntasks=1
 
-python -u main.py -model RGCN
+python -u main.py -model RGCN -no_protiens -savefile rgcn
 
 exit

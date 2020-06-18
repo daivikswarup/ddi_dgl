@@ -9,6 +9,6 @@
 #
 #SBATCH --ntasks=1
 
-python -u main.py -model Diffpool
+python -u main.py -model Diffpool -no_protiens -savefile diffpool
 
 exit

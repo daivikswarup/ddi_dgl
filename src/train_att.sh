@@ -9,6 +9,6 @@
 #
 #SBATCH --ntasks=1
 
-python -u main.py
+python -u main.py -no_protiens -savefile path_attention.pt
 
 exit

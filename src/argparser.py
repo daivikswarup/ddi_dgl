@@ -20,7 +20,10 @@ def parse_args():
                 default='pathattention')
     parser.add_argument('-savepath', action='store', dest='savepath',\
                 help='Directory to save checkpoints',\
-                default='../models')
+                default='models')
+    parser.add_argument('-savefile', action='store', dest='savefile',\
+                help='Filename for checkpoint',\
+                default='checkpoint.pt')
     parser.add_argument('-npaths', action='store', type=int,\
                 help = 'Number of paths to attend over',\
                 default = 10)
@@ -29,10 +32,10 @@ def parse_args():
                 default = 10)
     parser.add_argument('-batch_size', action='store', type=int,\
                 help = 'Batch_size',\
-                default = 128)
+                default = 1024)
     parser.add_argument('-num_epochs', action='store', type=int,\
                 help = 'num_epochs',\
-                default = 20)
+                default = 30)
     parser.add_argument('-mincount', action='store', type=int,\
                 help = 'minimum number of occurences in the data',\
                 default = 20000)

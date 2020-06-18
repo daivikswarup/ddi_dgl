@@ -10,6 +10,7 @@ from functools import partial
 import numpy as np
 from dgl.nn.pytorch.conv import RelGraphConv
 from graphsage import GraphSAGE
+from utils import get_paths
 
 class Basis_linear(nn.Module):
     def __init__(self, input_size, output_size, bases, rel_names):
@@ -89,6 +90,8 @@ class diffpool_layer_hetero(nn.Module):
     def forward(self, g, data):
         embeddings = self.embed_layer(g, data)
         assignment = self.assignment_layer(g, data)
+        for ntype in assignment:
+            assignment[ntype] = F.softmax(assignment[ntype],dim=1)
         ddi_adjs = [g.adjacency_matrix(etype=e) for e in self.ddi_edges]
         ddi_adj = ddi_adjs[0]
         for mat in ddi_adjs[1:]:
@@ -258,11 +261,15 @@ class DiffPoolEncoder(nn.Module):
             emb, adj, s = l(emb, adj)
             smaps.append(s)
         # assign nodes to final cluster
-        prod = smaps[0]
-        for s in smaps[1:]:
-            prod = torch.matmul(prod, s)
-        s_d = torch.matmul(s_d, prod)
-        s_p = torch.matmul(s_p, prod)
+        if len(smaps):
+            prod = smaps[0]
+            for s in smaps[1:]:
+                prod = torch.matmul(prod, s)
+            s_d = torch.matmul(s_d, prod)
+            s_p = torch.matmul(s_p, prod)
+        # print(s_d[:2,:])
+        # print(s_p[:2,:])
+
         drug_embeddings = torch.matmul(s_d, emb)
         protien_embeddings = torch.matmul(s_p, emb)
         return {'drug':drug_embeddings, 'protien': protien_embeddings},adj,\
@@ -377,6 +384,71 @@ class PathAttention(nn.Module):
         else:
             return op
         
+class LinkPredictionDiffpoolPA(nn.Module):
+
+    """Docstring for LinkPrediction. """
+
+    def __init__(self, g, sizes=[128, 128,128], num_clusters=[128, 64],
+                 num_paths=5):
+        """TODO: to be defined. """
+        super(LinkPredictionDiffpoolPA, self).__init__()
+        self.encoder = DiffPoolEncoder(g, sizes, num_clusters)
+        # self.output_layer = nn.Linear(2*sizes[-1], self.output_size)
+        self.relation_matrices = nn.Parameter(torch.zeros([len(g.etypes),
+                                                            sizes[-1],
+                                                            sizes[-1]]))
+        self.sizes = sizes
+        nn.init.xavier_normal_(self.relation_matrices)
+        self.lstm = nn.LSTM(sizes[-1],sizes[-1],1)
+        self.attention = nn.MultiheadAttention(sizes[-1], 2)
+        self.output_layer = nn.Linear(3*sizes[-1], len(g.etypes))
+
+    def get_path(self, path, embeddings):
+        vecs = [embeddings[node,:] for node in path]
+        # returns pathlen x dim
+        return torch.stack(vecs, 0)
+
+    def path_embedding(self, path, embeddings):
+        inp = self.get_path(path, embeddings)
+        # inp = inp.unsqueeze(1)
+        op, (h, c) = self.lstm(inp)
+        return h.view(-1)
+
+    def get_attention_context(self, path_embeddings, start, end):
+        if len(path_embeddings) == 0: #no paths
+            return torch.zeros(self.sizes[-1]).cuda()
+        stacked = torch.stack(path_embeddings, 0).unsqueeze(1) # NPath x 1 x dim
+        start = start.unsqueeze(0).unsqueeze(0) # 1 x 1 x dim
+        attn, att_wts = self.attention(start, stacked, stacked)
+        return attn.squeeze(0).squeeze(0)
+
+    def forward(self, g, nodepairs, relations=None, paths=None):
+        """Pass graph through rgcn, predict edge labels for given edge pairs
+
+        :g: TODO
+        :edgepairs: TODO
+        :returns: TODO
+
+        """
+        node_embeddings, adj, emb, s_d, s_p = self.encoder(g)
+        # assuming relations are only between drugs
+        drug_start = node_embeddings['drug'][nodepairs[:,0]]
+                                            # batch x 1 x dim
+        drug_end = node_embeddings['drug'][nodepairs[:,1]]
+                                            # batch x dim x 1
+        paths = get_paths(adj, nodepairs, s_d, 5)
+        path_embeddings = [[self.path_embedding(path, node_embeddings) for path in datum] for \
+                                   datum in paths]
+        context = [self.get_attention_context(pe, start, end) for\
+                   pe, start, end in zip(path_embeddings, torch.unbind(drug_start), \
+                           torch.unbind(drug_end))]
+        context = torch.stack(context) # Batch x dim
+        all_features = torch.cat([drug_start, drug_end, context],-1)
+        op = self.output_layer(all_features)
+        if relations is not None:
+            return torch.gather(op, 1, relations.unsqueeze(-1)).squeeze(-1)
+        else:
+            return op
 
 def main():
     import load_graph
