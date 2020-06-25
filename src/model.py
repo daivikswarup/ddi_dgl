@@ -14,7 +14,7 @@ from utils import get_paths
 
 class Basis_linear(nn.Module):
     def __init__(self, input_size, output_size, bases, rel_names):
-        nn.Module.__init__(self)
+        super(Basis_linear, self).__init__()
         num_relations = len(rel_names)
         self.rel_names = rel_names
         self.bases = bases
@@ -38,7 +38,7 @@ class RGCN_layer(nn.Module):
     def __init__(self, input_size, output_size, etypes,\
                  basis=30,nonlinearity='ReLU'):
         """TODO: to be defined. """
-        nn.Module.__init__(self)
+        super(RGCN_layer,self).__init__()
         self.output_size = output_size
         self.basis_layer = Basis_linear(input_size, output_size, basis, etypes)
         self.self_loop = nn.Linear(input_size, output_size, bias=False)
@@ -92,11 +92,7 @@ class diffpool_layer_hetero(nn.Module):
         assignment = self.assignment_layer(g, data)
         for ntype in assignment:
             assignment[ntype] = F.softmax(assignment[ntype],dim=1)
-        ddi_adjs = [g.adjacency_matrix(etype=e) for e in self.ddi_edges]
-        ddi_adj = ddi_adjs[0]
-        for mat in ddi_adjs[1:]:
-            ddi_adj += mat
-        ddi_adj = ddi_adj.to_dense().cuda()
+        ddi_adjs = {e: g.adjacency_matrix(etype=e).to_dense().cuda() for e in self.ddi_edges}
         # rest have only 1 type
         dpi_adj = g.adjacency_matrix(etype=self.dpi_edges).to_dense().cuda()
         pdi_adj = g.adjacency_matrix(etype=self.pdi_edges).to_dense().cuda()
@@ -107,29 +103,77 @@ class diffpool_layer_hetero(nn.Module):
         s_p = assignment['protien']
         s_pt = torch.transpose(s_p, 0, 1)
 
-        adj2 = torch.matmul(torch.matmul(s_dt, ddi_adj), s_d) +\
-                torch.matmul(torch.matmul(s_pt, ppi_adj), s_p)+\
-                torch.matmul(torch.matmul(s_dt, pdi_adj), s_p)
+        ddi_2 = {e: torch.matmul(torch.matmul(s_dt, mat), s_d) for e, mat in \
+                                  ddi_adjs.items()}
+        ppi_2 = torch.matmul(torch.matmul(s_pt, ppi_adj), s_p)
+        pdi_2 = torch.matmul(torch.matmul(s_dt, pdi_adj), s_p) 
+        dpi_2 = torch.matmul(torch.matmul(s_pt, dpi_adj), s_d) 
+        adj2 = ddi_2
+        adj2['pdi'] = pdi_2
+        adj2['dpi'] = dpi_2
+        adj2['ppi'] = ppi_2
+
+        # adj2 = torch.matmul(torch.matmul(s_dt, ddi_adj), s_d) +\
+        #         torch.matmul(torch.matmul(s_pt, ppi_adj), s_p)+\
+        #         torch.matmul(torch.matmul(s_dt, pdi_adj), s_p)
         embedding2 = torch.matmul(s_dt,embeddings['drug']) + \
                      torch.matmul(s_pt, embeddings['protien'])
         # adj2 = num_clusers x num_clusters
         # embedding2 = num_clusters x output_size
-        return adj2, embedding2, s_d, s_p
+        return adj2, embedding2, s_d, s_p, embeddings
+
+
+class RGCN_layer_vectorized(nn.Module):
+
+    """Docstring for RGCN_layer. """
+
+    def __init__(self, input_size, output_size, etypes,\
+                 basis=30,nonlinearity='ReLU'):
+        """TODO: to be defined. """
+        super(RGCN_layer_vectorized,self).__init__()
+        self.output_size = output_size
+        self.basis_layer = Basis_linear(input_size, output_size, basis, etypes)
+        self.self_loop = nn.Linear(input_size, output_size, bias=False)
+        self.bias = nn.Parameter(torch.zeros(output_size))
+        nn.init.zeros_(self.bias)
+        if nonlinearity == 'ReLU':
+            self.nonlinearity = nn.ReLU()
+        else:
+            # No non linearity
+            self.nonlinearity = nn.Sequential()
+
+    def forward(self, adj, data):
+        """TODO: Docstring for function.
+
+        :arg1: TODO
+        :returns: TODO
+
+        """
+        rel_mats = [torch.matmul(a, self.basis_layer(data, e)) for e, a in \
+                                 adj.items()]
+        output = self.self_loop(data) + torch.sum(torch.stack(rel_mats,\
+                                                dim=0), dim=0)
+        
+        return output
+
 
 
 # Diffpool layer that takes full adjacency matrix and cluster embeddings
-class diffpool_layer(nn.Module):
+class diffpool_layer_hetero_vectorized(nn.Module):
     def __init__(self, input_size, input_clusters, output_size,\
-                 output_clusters):
-        super(diffpool_layer, self).__init__()
-        self.embedding_layer = GraphSAGE(input_size, output_size) 
-        self.assignment_layer = GraphSAGE(input_size, output_clusters)
+                 output_clusters, etypes, basis=30):
+        super(diffpool_layer_hetero_vectorized, self).__init__()
+        self.embedding_layer = RGCN_layer_vectorized(input_size, output_size,
+                                                     etypes, basis) 
+        self.assignment_layer = RGCN_layer_vectorized(input_size, output_size,
+                                                     etypes, basis) 
     
-    def forward(self, emb, adj):
-        z = self.embedding_layer(emb, adj)
-        s = F.softmax(self.assignment_layer(emb, adj))
+    def forward(self, adj, emb):
+        z = self.embedding_layer(adj, emb)
+        s = F.softmax(self.assignment_layer(adj,emb))
         s_t = torch.transpose(s, 0, 1)
-        adj2 = torch.matmul(torch.matmul(s_t, adj), s)
+        adj2 = {e:torch.matmul(torch.matmul(s_t, a), s) for \
+                e,a in adj.items()}
         emb2 = torch.matmul(s_t, emb)
         return emb2, adj2, s
 
@@ -245,7 +289,7 @@ class DiffPoolEncoder(nn.Module):
         self.first_diffpool = \
                       diffpool_layer_hetero(sizes[0],sizes[1],g.etypes,num_clusters[0])
         self.next_diffpool_layers = nn.ModuleList(\
-                    [diffpool_layer(ins,inc,outs,outc) for ins,outs, inc, outc  in \
+                    [diffpool_layer_hetero_vectorized(ins,inc,outs,outc,g.etypes) for ins,outs, inc, outc  in \
                     zip(sizes[1:-1], sizes[2:],num_clusters[:-1],num_clusters[1:])])
 
         self.ip = \
@@ -255,10 +299,10 @@ class DiffPoolEncoder(nn.Module):
             nn.init.xavier_uniform_(self.ip[ntype])
 
     def forward(self, g):
-        emb, adj, s_d, s_p = self.first_diffpool(g, self.ip)
+        adj, emb, s_d, s_p, orig = self.first_diffpool(g, self.ip)
         smaps = []
         for l in self.next_diffpool_layers:
-            emb, adj, s = l(emb, adj)
+            emb, adj, s = l(adj, emb)
             smaps.append(s)
         # assign nodes to final cluster
         if len(smaps):
@@ -269,6 +313,9 @@ class DiffPoolEncoder(nn.Module):
             s_p = torch.matmul(s_p, prod)
         # print(s_d[:2,:])
         # print(s_p[:2,:])
+        
+        #
+        #return orig, adj, emb, s_d, s_p
 
         drug_embeddings = torch.matmul(s_d, emb)
         protien_embeddings = torch.matmul(s_p, emb)
@@ -281,7 +328,7 @@ class LinkPredictionDiffpool(nn.Module):
 
     """Docstring for LinkPrediction. """
 
-    def __init__(self, g, sizes=[128, 128,128], num_clusters=[128, 64]):
+    def __init__(self, g, sizes=[128, 128, 128], num_clusters=[128,64]):
         """TODO: to be defined. """
         super(LinkPredictionDiffpool, self).__init__()
         self.encoder = DiffPoolEncoder(g, sizes, num_clusters)
