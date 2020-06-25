@@ -90,8 +90,16 @@ class diffpool_layer_hetero(nn.Module):
     def forward(self, g, data):
         embeddings = self.embed_layer(g, data)
         assignment = self.assignment_layer(g, data)
-        for ntype in assignment:
-            assignment[ntype] = F.softmax(assignment[ntype],dim=1)
+        assignment = {e:v.view(-1,2,self.num_clusters//2) for e,v in \
+                      assignment.items()}
+
+        assignment['drug'] = \
+                          torch.cat([F.softmax(assignment['drug'][:,0,:],dim=1),\
+                                torch.zeros_like(assignment['drug'][:,0,:])],dim=1)
+        assignment['protien'] = \
+                          torch.cat([torch.zeros_like(assignment['protien'][:,1,:]),\
+                              F.softmax(assignment['protien'][:,1,:],dim=1)],dim=1)
+
         ddi_adjs = {e: g.adjacency_matrix(etype=e).to_dense().cuda() for e in self.ddi_edges}
         # rest have only 1 type
         dpi_adj = g.adjacency_matrix(etype=self.dpi_edges).to_dense().cuda()
@@ -315,12 +323,12 @@ class DiffPoolEncoder(nn.Module):
         # print(s_p[:2,:])
         
         #
-        #return orig, adj, emb, s_d, s_p
+        return orig, adj, emb, s_d, s_p
 
-        drug_embeddings = torch.matmul(s_d, emb)
-        protien_embeddings = torch.matmul(s_p, emb)
-        return {'drug':drug_embeddings, 'protien': protien_embeddings},adj,\
-                                 emb, s_d, s_p
+        #  drug_embeddings = torch.matmul(s_d, emb)
+        #  protien_embeddings = torch.matmul(s_p, emb)
+        #  return {'drug':drug_embeddings, 'protien': protien_embeddings},adj,\
+        #                           emb, s_d, s_p
 
 
 

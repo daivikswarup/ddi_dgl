@@ -22,7 +22,9 @@ def ddi_graph(data, nodemap, etypes=['']):
     # nodeids = sorted(nodeids)
     # nodemap = {node:id for id, node in enumerate(nodeids)}
 
-    edges = defaultdict(list)
+    edges = {}
+    for typ in etypes:
+        edges['drug',typ, 'drug'] = []
     print(len(data))
     for i, row in tqdm(data.iterrows(), desc='loading ddi', total=len(data)):
         edges['drug', row['Polypharmacy Side Effect'], 'drug']\
@@ -78,7 +80,7 @@ def build_multigraph(nmap, pmap, rmap, ddi_df, ppi_df, dpi_df):
     :returns: TODO
 
     """
-    ddi_edges = ddi_graph(ddi_df, nmap)
+    ddi_edges = ddi_graph(ddi_df, nmap, rmap)
     ppi_edges = ppi_graph(ppi_df, pmap)
     pdi_edges = dpi_graph(dpi_df, nmap, pmap)
     all_edges = ppi_edges

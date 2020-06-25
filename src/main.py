@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from argparser import parse_args
+from torchviz import make_dot, make_dot_from_trace
 from model import * 
 from tqdm import tqdm
 from data import GraphDataset
@@ -54,23 +55,35 @@ def read_data(args):
     protiens = sorted(list(set(ppi['Gene 1'].values.tolist()\
                         + ppi['Gene 2'].values.tolist())))
     relations = sorted(list(set(ddi['Polypharmacy Side Effect'])))
+    print(len(relations))
     return drugs, protiens,relations, ddi, ppi, dpi
 
 def train(model, dataset, val_dataset, args):
     model.train()
     loss = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.00001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     for epoch in range(args.num_epochs):
         model.train()
+        losses = []
         for i, (g, e, l, y, paths) in tqdm(enumerate(dataset.get_batches(args.batch_size,npaths=args.npaths)),
                         desc='Epoch %d'%epoch,total=len(dataset)/args.batch_size):
             optimizer.zero_grad()
             scores = model(g, e.cuda(), l.cuda(),paths)
+            # print(scores.cpu().detach())
             l = loss(scores, y.float().cuda())
+            # dot = make_dot(l,
+            #                         params=dict(model.named_parameters()))
+            # dot.format = 'png'
+            # dot.render('torchviz-sample')
+
             l.backward()
             optimizer.step()
+            losses.append(l.detach().cpu().numpy())
+            # print(losses[-1])
         print('Epoch %d:'%epoch)
+        print('Epoch loss = %f'%np.mean(losses))
         print(eval(model, dataset.g, val_dataset, args))
+        # print(eval(model, dataset.g, dataset, args))
 
 def eval(model, train_g, dataset, args):
     model.eval()
@@ -138,16 +151,18 @@ def eval_1fold(drugs, protiens, relations, ddi, ppi, dpi, args):
         model = LinkPrediction(train_dataset.g).cuda()
     elif args.model=='Diffpool':
         model = LinkPredictionDiffpool(train_dataset.g).cuda()
+        # model = LinkPrediction(train_dataset.g).cuda()
     elif args.model == 'DiffpoolPA':
         model = LinkPredictionDiffpoolPA(train_dataset.g).cuda()
     else:
         model = PathAttention(train_dataset.g).cuda()
+    print(model)
     train(model, train_dataset, val_dataset, args)
     acc = eval(model,train_dataset.g, test_dataset, args)
     print(acc)
     torch.save(model.state_dict(), os.path.join(args.savepath,
                                                 args.savefile))
-    return aggregate(metrics)
+    return acc
 
 
 

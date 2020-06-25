@@ -8,6 +8,7 @@ import numpy as np
 
 
 def get_paths(adj, nodepairs, s, npaths):
+    adj = torch.sum(torch.stack([v for e,v in adj.items()],dim=0),dim=0)
     assignment = torch.argmax(s, dim=1)
     clusterpairs = [(assignment[a],assignment[b]) for a,b in nodepairs]
     npadj = adj.detach().cpu().numpy()
