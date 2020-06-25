@@ -44,7 +44,7 @@ def read_data(args):
 
     """
     ddi = filter_ddi(pd.read_csv(args.ddi), args.mincount)
-    ppi = pd.read_csv(args.ppi)
+    ppi = pd.read_csv(args.ppi,nrows=10000)
     dpi = pd.read_csv(args.dpi)
     if not args.use_protien:
         # delete all rows. keep column structure

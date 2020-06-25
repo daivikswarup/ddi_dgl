@@ -171,14 +171,23 @@ class diffpool_layer_hetero_vectorized(nn.Module):
     def __init__(self, input_size, input_clusters, output_size,\
                  output_clusters, etypes, basis=30):
         super(diffpool_layer_hetero_vectorized, self).__init__()
+        self.output_clusters = output_clusters
         self.embedding_layer = RGCN_layer_vectorized(input_size, output_size,
                                                      etypes, basis) 
-        self.assignment_layer = RGCN_layer_vectorized(input_size, output_size,
+        self.assignment_layer = RGCN_layer_vectorized(input_clusters,
+                                                      output_clusters,
                                                      etypes, basis) 
     
     def forward(self, adj, emb):
+        input_clusters = emb.shape[0]
         z = self.embedding_layer(adj, emb)
-        s = F.softmax(self.assignment_layer(adj,emb))
+        s = \
+                  F.softmax(self.assignment_layer(adj,emb).view(-1,2,self.output_clusters//2),dim=2)
+        s_drug = \
+                torch.cat([s[:input_clusters//2,0,:],torch.zeros_like(s[:input_clusters//2,0,:])],dim=1)
+        s_prot = \
+                torch.cat([torch.zeros_like(s[input_clusters//2:,1,:]),s[input_clusters//2:,1,:]],dim=1)
+        s = torch.cat([s_drug, s_prot], dim=0)
         s_t = torch.transpose(s, 0, 1)
         adj2 = {e:torch.matmul(torch.matmul(s_t, a), s) for \
                 e,a in adj.items()}
